@@ -1,0 +1,224 @@
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sally's Munchkin Shop</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+</head>
+
+<body>
+  <main id="app" class="w-full mx-auto">
+    <section class="bg-orange-800 text-white px-2 py-8">
+      <div class="max-w-2xl mx-auto w-full flex flex-col text-center items-center">
+        <p class="text-xl">Welcome to</p>
+        <h1 class="text-4xl font-bold">Sally's Munchkin Shop</h1>
+      </div>
+    </section>
+
+    <section class="bg-gray-200 px-2 py-8">
+      <div class="max-w-2xl mx-auto w-full flex flex-col">
+        <h2 class="text-4xl font-bold text-center pb-8">Order</h2>
+
+        <template v-if="message">
+          <div class="bg-amber-200 border border-amber-500 text-amber-800 text-white px-4 py-2 rounded-lg mb-4">
+            <p>[[ message.message ]]</p>
+          </div>
+        </template>
+
+        <form @submit.prevent="submitOrder" class="space-y-4">
+          <div class="flex flex-col space-y-1">
+            <label for="customer_name">Customer Name</label>
+            <input class="px-4 py-2 border rounded" type="text" name="customer_name" id="customer_name"
+              placeholder="Enter your name..." v-model="customerName" />
+          </div>
+
+          <div>
+            <label for="customer_name">Your orders</label>
+
+            <div>
+              <div v-for="m in availableMunchkins" class="py-4 border mb-2">
+                <div class="flex flex-row justify-between items-center space-x-4">
+                  <div class="flex flex-row items-center space-x-2">
+                    <input class="w-24 px-4 py-2 border rounded" type="number" name="quantity" id="quantity" min="0" v-model="currentOrders[m.name]">
+                    <span>[[ m.name ]]</span>
+                  </div>
+                  <span class="font-semibold">₱[[ m.price ]]</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex flex-row justify-between items-center">
+            <div class="text-left space-y-1">
+              <p>Total</p>
+              <h2 class="text-3xl font-bold">₱[[ total ]]</h2>
+            </div>
+
+            <button
+              class="px-9 py-3 bg-orange-800 border border-brown-900 hover:bg-brown-900 rounded-full text-white font-semibold"
+              type="submit">Submit</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section class="max-w-2xl mx-auto w-full flex-col min-h-[40vh]">
+      <h2 class="py-4 font-semibold">Orders</h2>
+
+      <div v-for="order in orders" class="bg-white border border-gray-300 rounded-lg p-4 mb-4">
+        <div :key="'order_' + order.id" class="flex flex-row justify-between items-center">
+          <div>
+            <p>Order ID: [[ order.id ]]</p>
+            <p>Customer Name: [[ order.customer_name ]]</p>
+          </div>
+          <div class="flex flex-col space-y-2">
+            <p>Status: [[ order.status ? order.status : 'UNKNOWN' ]]</p>
+            <button
+              class="px-4 py-2 bg-orange-800 border border-brown-900 hover:bg-brown-900 rounded-full text-white font-semibold disabled:bg-gray-100 disabled:text-gray-800"
+              @click="claimOrder(order.id)"
+              :disabled="order.status !== 'READY'"
+              type="button">Claim</button>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="orders.length == 0" class="text-center text-gray-400 py-8">
+        <p>No orders yet</p>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const { createApp } = Vue
+
+    createApp({
+      mounted() {
+        // fetch /orders every 2 seconds
+        Promise.all([
+          this.getMunchkins(),
+          this.getOrders()
+        ])
+          .finally(() => {
+            setInterval(() => {
+              this.getOrders()
+            }, 1000);
+          });
+      },
+      data() {
+        return {
+          message: null,
+          customerName: '',
+          orders: [],
+          currentOrders: {},
+          availableMunchkins: []
+        }
+      },
+      methods: {
+        async claimOrder(orderId) {
+          const resp = await fetch(`/claim_order/${orderId}`, {
+            method: 'DELETE'
+          });
+
+          if (!resp.ok) {
+            this.message = {
+              message: 'An error occurred. Please try again later.'
+            }
+            return;
+          }
+
+          const data = await resp.json();
+          this.message = data;
+          await this.getOrders();
+        },
+        async getMunchkins() {
+          const resp = await fetch('/munchkins');
+          const data = await resp.json();
+          this.availableMunchkins = data;
+
+          this.availableMunchkins.forEach(m => {
+            this.currentOrders[m.name] = 0;
+          });
+        },
+        async submitOrder() {
+          const order = {
+            customer_name: this.customerName,
+            total: this.total,
+            order_items: this.finalOrders
+          }
+
+          if (!order.customer_name) {
+            this.message = {
+              message: 'Please enter your name'
+            }
+            return;
+          }
+
+          if (order.order_items.length === 0) {
+            this.message = {
+              message: 'Please select at least one munchkin'
+            }
+            return;
+          }
+
+          const resp = await fetch('/orders', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(order)
+          });
+
+          const result = await resp.json();
+          if (!resp.ok) {
+            this.message = {
+              message: 'An error occurred. Please try again later.'
+            }
+            return;
+          }
+
+          this.message = result;
+
+          await this.getOrders();
+          this.availableMunchkins.forEach(m => {
+            this.currentOrders[m.name] = 0;
+          });
+        },
+        async getOrders() {
+          const resp = await fetch('/orders');
+          const data = await resp.json();
+
+          this.orders = await Promise.all(data.map(async order => {
+            const resp = await fetch(`/order_status/${order.task_id}`);
+            const data = await resp.json();
+            return {
+              ...order,
+              status: data.status
+            }
+          }));
+        }
+      },
+      computed: {
+        total() {
+          return this.finalOrders.reduce((acc, order) => acc + order.price, 0)
+        },
+        finalOrders() {
+          return Object.entries(this.currentOrders)
+            .filter(([_, quantity]) => quantity > 0)
+            .map(([name, quantity]) => {
+              const munchkin = this.availableMunchkins.find(m => m.name === name)
+              return {
+                name,
+                quantity,
+                price: munchkin.price * quantity
+              }
+            })
+        }
+      },
+      delimiters: ['[[',']]']
+    }).mount('#app')
+  </script>
+</body>
+
+</html>
